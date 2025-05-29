@@ -1346,11 +1346,7 @@ def display_company_analysis(company_name, ticker):
                     font-weight: bold;
                     text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
                 '>{sentiment_score:.1f}<span style='font-size: 2rem;'>/10</span></div>
-                <div style='
-                    color: white;
-                    font-size: 1.2rem;
-                    opacity: 0.9;
-                '>Confidence: {sentiment_results.get('confidence', 0.0):.0%}</div>
+                
                 <div style='
                     background: rgba(255,255,255,0.1);
                     height: 12px;
