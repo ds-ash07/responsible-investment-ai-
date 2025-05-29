@@ -1,6 +1,6 @@
 """SDG Analyzer using Nemotron API."""
 from typing import Dict, Any, Optional
-from src.tools.base_analyzer import BaseAnalyzer
+from tools.base_analyzer import BaseAnalyzer
 import json
 import traceback
 import yfinance as yf
