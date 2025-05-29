@@ -17,20 +17,58 @@ class FinancialAnalyzer(BaseAnalyzer):
         """Analyze financial metrics for a company"""
         try:
             print(f"\nAnalyzing financial metrics for {ticker}...")
+            
+            # Get comprehensive AI analysis
             response = self.client.analyze_company(ticker, 'FINANCIAL')
             
             if response and response.get('data_available'):
                 try:
                     data = json.loads(response['analysis'])
-                    print("Successfully parsed financial analysis")
-                    data["data_available"] = True
-                    data["data_sources"] = ["AI Analysis"]
+                    
+                    # Get additional AI insights
+                    insights_prompt = f"""Analyze {ticker}'s financial performance and provide:
+                    1. Key strengths and competitive advantages
+                    2. Major risks and challenges
+                    3. Growth opportunities
+                    4. Market positioning
+                    5. Future outlook
+                    
+                    Format the response as a JSON object with these exact keys:
+                    {{
+                        "strengths": ["strength1", "strength2", "strength3"],
+                        "risks": ["risk1", "risk2", "risk3"],
+                        "opportunities": ["opportunity1", "opportunity2", "opportunity3"],
+                        "positioning": "Detailed market position analysis",
+                        "outlook": "Comprehensive future outlook"
+                    }}"""
+                    
+                    insights_response = self.get_ai_response(insights_prompt)
+                    if insights_response:
+                        try:
+                            insights = json.loads(insights_response)
+                            data['ai_insights'] = insights
+                        except json.JSONDecodeError:
+                            logger.error("Failed to parse AI insights")
+                            data['ai_insights'] = {
+                                "strengths": [],
+                                "risks": [],
+                                "opportunities": [],
+                                "positioning": "Analysis not available",
+                                "outlook": "Analysis not available"
+                            }
+                    
+                    data.update({
+                        "data_available": True,
+                        "data_sources": ["AI Analysis", "Market Data"]
+                    })
+                    
                     return data
+                    
                 except json.JSONDecodeError as e:
-                    print(f"Failed to parse financial analysis: {e}")
-                    print(f"Raw response: {response['analysis']}")
+                    logger.error(f"Failed to parse financial analysis: {e}")
+                    logger.debug(f"Raw response: {response['analysis']}")
             
-            return self.format_not_available_message("AI Analysis")
+            return self._get_default_result()
             
         except Exception as e:
             logger.error(f"Financial analysis failed for {ticker}: {str(e)}")

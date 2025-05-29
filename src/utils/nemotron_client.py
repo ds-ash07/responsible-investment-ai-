@@ -17,6 +17,34 @@ class NemotronClient:
         )
         self.model = "nvidia/llama-3.1-nemotron-ultra-253b-v1"
 
+    def get_ai_response(self, prompt: str) -> Optional[str]:
+        """Get direct AI response without JSON parsing."""
+        try:
+            messages = [
+                {"role": "system", "content": "You are an expert financial analyst. Provide detailed, evidence-based analysis."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+                top_p=0.95,
+                max_tokens=4096,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stream=False
+            )
+            
+            if completion and completion.choices:
+                return completion.choices[0].message.content
+            
+            return None
+
+        except Exception as e:
+            logger.error(f"AI response failed: {str(e)}")
+            return None
+
     def _make_request(self, prompt: str, analysis_type: str = "general") -> Optional[Dict[str, Any]]:
         """Make a request to the Nemotron API."""
         try:
@@ -144,26 +172,51 @@ class NemotronClient:
                               }
                           }""",
             
-            "financial": """You are an expert financial analyst. Analyze companies based on their financial performance, market position, 
-                          and risk metrics. Return ONLY a valid JSON object with actual numerical values (not strings).
-                          The JSON MUST follow this exact structure:
-                          {
-                              "roe": 15.5,
-                              "roa": 8.3,
-                              "profit_margin": 12.7,
-                              "revenue_growth": 7.5,
-                              "eps_growth": 8.2,
-                              "stock_momentum": 7.8,
-                              "pe_ratio": 20.5,
-                              "market_cap": 100.5,
-                              "dividend_yield": 2.5,
-                              "trend": "bullish",
-                              "growth_rate": 7.5,
-                              "volatility": "moderate",
-                              "beta": 1.2,
-                              "current_ratio": 2.1,
-                              "debt_equity": 0.8
-                          }""",
+            "financial": """You are an expert financial analyst with deep knowledge of market dynamics, company valuations, and investment strategies.
+            Analyze companies based on their financial performance, market position, and risk metrics.
+            
+            Return a valid JSON object with TWO main sections:
+            1. Core metrics (numerical values only):
+            {
+                "roe": 15.5,
+                "roa": 8.3,
+                "profit_margin": 12.7,
+                "revenue_growth": 7.5,
+                "eps_growth": 8.2,
+                "stock_momentum": 7.8,
+                "pe_ratio": 20.5,
+                "market_cap": 100.5,
+                "dividend_yield": 2.5,
+                "trend": "bullish",
+                "growth_rate": 7.5,
+                "volatility": "moderate",
+                "beta": 1.2,
+                "current_ratio": 2.1,
+                "debt_equity": 0.8
+            }
+            
+            2. AI insights:
+            {
+                "strengths": [
+                    "Strong market leadership in core segments",
+                    "Robust cash flow generation",
+                    "High R&D investment driving innovation"
+                ],
+                "risks": [
+                    "Increasing competitive pressure",
+                    "Regulatory challenges in key markets",
+                    "Supply chain vulnerabilities"
+                ],
+                "opportunities": [
+                    "Expansion into emerging markets",
+                    "New product development pipeline",
+                    "Strategic acquisition targets"
+                ],
+                "positioning": "Detailed analysis of company's competitive position and market share",
+                "outlook": "Comprehensive future outlook considering market trends, company strategy, and growth potential"
+            },
+            
+            Be thorough, critical, and realistic in your assessment. Support insights with specific evidence where possible.""",
             
             "general": """You are a brutally honest ESG and financial analyst. Your task is to analyze companies and provide detailed metrics 
                          in JSON format. Be critical and realistic in your assessments. All numerical scores should be between 0-10."""

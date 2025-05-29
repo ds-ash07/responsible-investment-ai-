@@ -24,24 +24,20 @@ class BaseAnalyzer(ABC):
         """Initialize the analyzer with model key and API configuration"""
         print(f"\nInitialized {self.__class__.__name__} with model: nvidia/llama-3.1-nemotron-ultra-253b-v1")
         self.client = NemotronClient()
+        self.model_key = model_key
+        self.esg_data_key = None
+        self.news_api_key = None
         
-    def get_ai_response(self, prompt: str) -> str:
-        """Get AI analysis from Nemotron"""
+    def get_ai_response(self, prompt: str) -> Optional[str]:
+        """Get AI response using the client's _make_request method."""
         try:
-            print("\nSending request to AI model...")
             response = self.client._make_request(prompt)
-            
             if response and 'choices' in response:
-                content = response['choices'][0]['message']['content']
-                if content:
-                    return content
-            
-            print("API request failed")
-            return self._get_default_response()
-            
+                return response['choices'][0]['message']['content']
+            return None
         except Exception as e:
-            print(f"Error in get_ai_response: {str(e)}")
-            return self._get_default_response()
+            logger.error(f"Error getting AI response: {str(e)}")
+            return None
             
     def _get_system_prompt(self) -> str:
         """Get the system prompt for AI analysis"""
