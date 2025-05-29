@@ -1,6 +1,6 @@
 """Financial Analyzer using Nemotron API."""
 from typing import Dict, List, Any
-from src.tools.base_analyzer import BaseAnalyzer
+from tools.base_analyzer import BaseAnalyzer
 import json
 import traceback
 import logging
