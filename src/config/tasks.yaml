@@ -1,0 +1,270 @@
+# Tasks Configuration
+version: '1.0'
+
+# Global Task Settings
+global_settings:
+  default_timeout: 300
+  max_retries: 3
+  parallel_execution: true
+  cache_enabled: true
+  logging_level: 'INFO'
+
+# Analysis Workflows
+workflows:
+  company_analysis:
+    name: "Complete Company Analysis"
+    description: "End-to-end company analysis workflow"
+    priority: 1
+    steps:
+      - data_collection
+      - esg_analysis
+      - sentiment_analysis
+      - financial_analysis
+      - recommendation_generation
+    timeout: 600
+    retry_policy:
+      max_attempts: 3
+      backoff_factor: 2
+
+# Task Definitions
+tasks:
+  data_collection:
+    name: "Data Collection"
+    description: "Collect all required company data"
+    priority: 1
+    dependencies: []
+    subtasks:
+      financial_data:
+        sources:
+          - yfinance
+          - bloomberg
+          - reuters
+        data_points:
+          - market_prices
+          - financial_statements
+          - trading_volumes
+        update_frequency: 3600
+        
+      esg_data:
+        sources:
+          - sustainability_reports
+          - regulatory_filings
+          - third_party_ratings
+        data_points:
+          - environmental_metrics
+          - social_indicators
+          - governance_data
+        update_frequency: 86400
+        
+      news_data:
+        sources:
+          - news_api
+          - social_media
+          - press_releases
+        lookback_period: 604800
+        update_frequency: 3600
+
+  esg_analysis:
+    name: "ESG Analysis"
+    description: "Analyze ESG metrics and SDG alignment"
+    priority: 1
+    dependencies: ["data_collection"]
+    components:
+      environmental:
+        metrics:
+          - carbon_emissions
+          - resource_usage
+          - waste_management
+          - environmental_policy
+        weights:
+          emissions: 0.4
+          resources: 0.3
+          waste: 0.2
+          policy: 0.1
+          
+      social:
+        metrics:
+          - workforce_diversity
+          - human_rights
+          - community_impact
+          - labor_practices
+        weights:
+          diversity: 0.3
+          rights: 0.3
+          community: 0.2
+          labor: 0.2
+          
+      governance:
+        metrics:
+          - board_composition
+          - executive_compensation
+          - shareholder_rights
+          - transparency
+        weights:
+          board: 0.3
+          compensation: 0.2
+          rights: 0.3
+          transparency: 0.2
+
+  sentiment_analysis:
+    name: "Sentiment Analysis"
+    description: "Analyze market sentiment and public perception"
+    priority: 2
+    dependencies: ["data_collection"]
+    components:
+      news_sentiment:
+        sources:
+          - major_news
+          - financial_press
+          - industry_news
+        weights:
+          credibility: 0.4
+          relevance: 0.3
+          recency: 0.3
+          
+      social_sentiment:
+        sources:
+          - twitter
+          - linkedin
+          - reddit
+        weights:
+          influence: 0.4
+          engagement: 0.3
+          sentiment: 0.3
+          
+      analyst_sentiment:
+        sources:
+          - research_reports
+          - analyst_ratings
+          - market_commentary
+        weights:
+          reputation: 0.4
+          accuracy: 0.3
+          recency: 0.3
+
+  financial_analysis:
+    name: "Financial Analysis"
+    description: "Analyze financial health and market performance"
+    priority: 1
+    dependencies: ["data_collection"]
+    components:
+      profitability:
+        metrics:
+          - roi
+          - profit_margin
+          - operating_efficiency
+        weights:
+          roi: 0.4
+          margin: 0.3
+          efficiency: 0.3
+          
+      growth:
+        metrics:
+          - revenue_growth
+          - earnings_growth
+          - market_share
+        weights:
+          revenue: 0.4
+          earnings: 0.4
+          market_share: 0.2
+          
+      risk:
+        metrics:
+          - volatility
+          - beta
+          - debt_ratio
+        weights:
+          volatility: 0.3
+          beta: 0.3
+          debt: 0.4
+
+  recommendation_generation:
+    name: "Investment Recommendation"
+    description: "Generate final investment recommendations"
+    priority: 1
+    dependencies:
+      - esg_analysis
+      - sentiment_analysis
+      - financial_analysis
+    components:
+      scoring:
+        weights:
+          esg: 0.4
+          sentiment: 0.3
+          financial: 0.3
+        thresholds:
+          strong_buy: 8.0
+          buy: 7.0
+          hold: 6.0
+          sell: 4.0
+          
+      risk_assessment:
+        factors:
+          - market_risk
+          - esg_risk
+          - reputation_risk
+        weights:
+          market: 0.4
+          esg: 0.3
+          reputation: 0.3
+          
+      recommendations:
+        types:
+          - investment_action
+          - risk_warning
+          - improvement_areas
+        confidence_threshold: 0.8
+
+# Output Formats
+output_formats:
+  detailed_report:
+    format: "pdf"
+    sections:
+      - executive_summary
+      - esg_analysis
+      - financial_analysis
+      - sentiment_analysis
+      - recommendations
+    
+  dashboard:
+    format: "web"
+    components:
+      - score_cards
+      - charts
+      - alerts
+      - recommendations
+    
+  api_response:
+    format: "json"
+    fields:
+      - scores
+      - metrics
+      - recommendations
+      - metadata
+
+# Error Handling
+error_handling:
+  retry_policy:
+    max_attempts: 3
+    backoff_factor: 2
+  fallback_strategies:
+    data_collection: "cache"
+    analysis: "partial_results"
+    recommendation: "conservative"
+
+# Monitoring
+monitoring:
+  metrics:
+    - execution_time
+    - success_rate
+    - error_rate
+    - cache_hits
+  alerts:
+    - execution_failure
+    - timeout
+    - error_threshold
+    - data_quality
+  dashboards:
+    - performance
+    - errors
+    - usage
