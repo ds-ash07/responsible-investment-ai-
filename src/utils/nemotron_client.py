@@ -1,7 +1,6 @@
 """Nemotron API client utilities."""
 import logging
 from typing import Dict, Any, Optional
-from openai import OpenAI
 import json
 import re
 
