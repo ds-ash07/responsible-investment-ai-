@@ -1,6 +1,6 @@
 """Sentiment Analyzer using Nemotron API."""
 from typing import Dict, Any, Optional, List
-from src.tools.base_analyzer import BaseAnalyzer
+from tools.base_analyzer import BaseAnalyzer
 import json
 import traceback
 from datetime import datetime, timedelta
