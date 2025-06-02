@@ -1,5 +1,5 @@
 """Sentiment Analyzer using Nemotron API."""
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from src.tools.base_analyzer import BaseAnalyzer
 import json
 import traceback
@@ -293,80 +293,248 @@ Return ONLY a valid JSON object with this structure:
         return base_prompt
 
     def _generate_dynamic_result(self, company_name: str, market_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Generate dynamic sentiment analysis result."""
-        # Base sentiment score
-        base_score = random.uniform(5.0, 8.0)
-        
-        # Adjust score based on market data
-        if market_data:
-            price_impact = market_data['price_change'] * 0.05
-            momentum_impact = market_data['momentum'] * 0.1
-            base_score = min(10, max(0, base_score + price_impact + momentum_impact))
-        
-        # Generate factors with dynamic scores
-        positive_factors = [
-            {
-                'category': 'Market Position',
-                'description': f'Strong market presence in key sectors',
-                'impact_score': random.uniform(7.5, 9.0)
-            },
-            {
-                'category': 'Innovation',
-                'description': f'Continued investment in R&D and technology',
-                'impact_score': random.uniform(7.0, 8.5)
-            }
-        ]
-        
-        negative_factors = [
-            {
-                'category': 'Competition',
-                'description': f'Increasing competitive pressure in main markets',
-                'impact_score': random.uniform(4.0, 6.0)
-            },
-            {
-                'category': 'Market Risks',
-                'description': f'Exposure to market volatility and economic uncertainties',
-                'impact_score': random.uniform(4.5, 6.5)
-            }
-        ]
-        
-        # Add market-based factors if available
-        if market_data:
-            if market_data['price_change'] > 10:
-                positive_factors.append({
-                    'category': 'Market Performance',
-                    'description': f'Strong price appreciation of {market_data["price_change"]:.1f}% over the past year',
-                    'impact_score': min(9.5, 7 + market_data["price_change"] * 0.05)
-                })
-            elif market_data['price_change'] < -10:
-                negative_factors.append({
-                    'category': 'Market Performance',
-                    'description': f'Significant price decline of {market_data["price_change"]:.1f}% over the past year',
-                    'impact_score': max(3.0, 6 + market_data["price_change"] * 0.05)
-                })
-        
-        return {
-            'data_available': True,
-            'sentiment_score': base_score,
-            'confidence': random.uniform(0.6, 0.8),
-            'positive_factors': positive_factors,
-            'negative_factors': negative_factors,
-            'major_events': [
-                {
-                    'date': (datetime.now().replace(day=1) - timedelta(days=random.randint(0, 90))).strftime('%Y-%m'),
-                    'event': f'Strategic business development initiative',
-                    'impact': 'Positive market reception and improved stakeholder confidence',
-                    'score_change': random.uniform(0.3, 0.8)
-                },
-                {
-                    'date': (datetime.now().replace(day=1) - timedelta(days=random.randint(0, 90))).strftime('%Y-%m'),
-                    'event': f'Industry-wide regulatory changes',
-                    'impact': 'Temporary market uncertainty and adaptation period',
-                    'score_change': random.uniform(-0.5, -0.2)
+        """Generate sentiment analysis result based on real market data."""
+        try:
+            # Get real market data if not provided
+            if not market_data:
+                ticker = self._get_ticker_symbol(company_name)
+                if ticker:
+                    market_data = self._get_market_data(ticker)
+            
+            # Initialize base scores from real data if available
+            if market_data:
+                # Calculate base score from real metrics
+                price_change = market_data.get('price_change', 0)
+                volume_change = market_data.get('volume_change', 0)
+                volatility = market_data.get('volatility', 0)
+                momentum = market_data.get('momentum', 0)
+                
+                # Weight the components
+                price_weight = 0.4
+                volume_weight = 0.2
+                volatility_weight = 0.2
+                momentum_weight = 0.2
+                
+                # Normalize each component to 0-10 scale
+                price_score = min(10, max(0, 5 + (price_change * 0.2)))  # ±50% change maps to 0-10
+                volume_score = min(10, max(0, 5 + (volume_change * 0.1)))  # ±100% change maps to 0-10
+                volatility_score = min(10, max(0, 10 - (volatility * 0.2)))  # Lower volatility is better
+                momentum_score = min(10, max(0, 5 + (momentum * 2)))  # Momentum score
+                
+                # Calculate weighted base score
+                base_score = (
+                    price_score * price_weight +
+                    volume_score * volume_weight +
+                    volatility_score * volatility_weight +
+                    momentum_score * momentum_weight
+                )
+                
+                # Generate factors based on real data
+                positive_factors = []
+                negative_factors = []
+                
+                # Price performance factors
+                if price_change > 10:
+                    positive_factors.append({
+                        'category': 'Price Performance',
+                        'description': f'Strong price appreciation of {price_change:.1f}% showing market confidence',
+                        'impact_score': price_score
+                    })
+                elif price_change < -10:
+                    negative_factors.append({
+                        'category': 'Price Performance',
+                        'description': f'Price decline of {abs(price_change):.1f}% indicating market concerns',
+                        'impact_score': max(2, 5 + (price_change * 0.1))
+                    })
+                
+                # Volume analysis
+                if volume_change > 20:
+                    positive_factors.append({
+                        'category': 'Trading Activity',
+                        'description': f'Increased trading volume by {volume_change:.1f}% showing strong market interest',
+                        'impact_score': volume_score
+                    })
+                elif volume_change < -20:
+                    negative_factors.append({
+                        'category': 'Trading Activity',
+                        'description': f'Decreased trading volume by {abs(volume_change):.1f}% indicating reduced market interest',
+                        'impact_score': max(2, 5 + (volume_change * 0.05))
+                    })
+                
+                # Volatility analysis
+                if volatility < 20:
+                    positive_factors.append({
+                        'category': 'Market Stability',
+                        'description': f'Low volatility of {volatility:.1f}% suggesting stable market confidence',
+                        'impact_score': volatility_score
+                    })
+                elif volatility > 40:
+                    negative_factors.append({
+                        'category': 'Market Stability',
+                        'description': f'High volatility of {volatility:.1f}% indicating market uncertainty',
+                        'impact_score': max(2, 10 - (volatility * 0.1))
+                    })
+                
+                # Momentum analysis
+                if momentum > 1.5:
+                    positive_factors.append({
+                        'category': 'Market Momentum',
+                        'description': 'Strong positive momentum indicating growing market confidence',
+                        'impact_score': momentum_score
+                    })
+                elif momentum < -1.5:
+                    negative_factors.append({
+                        'category': 'Market Momentum',
+                        'description': 'Negative momentum suggesting declining market sentiment',
+                        'impact_score': max(2, 5 + (momentum * 1.5))
+                    })
+                
+                # Ensure we have at least one factor in each category
+                if not positive_factors:
+                    positive_factors.append({
+                        'category': 'Market Presence',
+                        'description': 'Maintained market presence despite challenges',
+                        'impact_score': max(5.0, base_score - 1)
+                    })
+                if not negative_factors:
+                    negative_factors.append({
+                        'category': 'Market Risks',
+                        'description': 'General market and economic uncertainties',
+                        'impact_score': max(2.0, min(6.0, 10 - base_score))
+                    })
+                
+                # Calculate confidence based on data quality
+                confidence = min(0.95, max(0.60, 
+                    0.75 + 
+                    (0.05 if price_change != 0 else 0) +
+                    (0.05 if volume_change != 0 else 0) +
+                    (0.05 if volatility != 0 else 0) +
+                    (0.05 if momentum != 0 else 0)
+                ))
+                
+                return {
+                    'data_available': True,
+                    'sentiment_score': base_score,
+                    'confidence': confidence,
+                    'positive_factors': positive_factors,
+                    'negative_factors': negative_factors,
+                    'major_events': self._get_major_events(company_name, market_data),
+                    'trend_analysis': {
+                        'current_trend': self._generate_trend_description(base_score, market_data),
+                        'future_outlook': self._generate_outlook_description(base_score, market_data)
+                    }
                 }
-            ],
-            'trend_analysis': {
-                'current_trend': f"The company shows {'positive' if base_score > 6 else 'mixed'} market sentiment with {'strong' if base_score > 7 else 'moderate'} investor confidence",
-                'future_outlook': f"Expected to {'maintain positive momentum' if base_score > 7 else 'face some challenges but remain stable' if base_score > 5 else 'require significant improvements'}"
+            
+            # If no market data available, return a more conservative result
+            return {
+                'data_available': False,
+                'sentiment_score': 5.0,
+                'confidence': 0.6,
+                'positive_factors': [{
+                    'category': 'Market Presence',
+                    'description': 'Basic market presence maintained',
+                    'impact_score': 5.0
+                }],
+                'negative_factors': [{
+                    'category': 'Data Availability',
+                    'description': 'Limited market data available for analysis',
+                    'impact_score': 5.0
+                }],
+                'major_events': [],
+                'trend_analysis': {
+                    'current_trend': 'Insufficient data for detailed trend analysis',
+                    'future_outlook': 'More data needed for reliable outlook prediction'
+                }
             }
-        }
+            
+        except Exception as e:
+            logger.error(f"Error generating sentiment result: {str(e)}")
+            return {
+                'data_available': False,
+                'sentiment_score': 5.0,
+                'confidence': 0.5,
+                'positive_factors': [],
+                'negative_factors': [],
+                'major_events': [],
+                'trend_analysis': {
+                    'current_trend': 'Error in analysis',
+                    'future_outlook': 'Unable to generate outlook'
+                }
+            }
+
+    def _generate_trend_description(self, score: float, market_data: Dict[str, Any]) -> str:
+        """Generate detailed trend description based on real market data."""
+        price_change = market_data.get('price_change', 0)
+        momentum = market_data.get('momentum', 0)
+        volatility = market_data.get('volatility', 0)
+        
+        trend_strength = "strong" if abs(momentum) > 1.5 else "moderate" if abs(momentum) > 0.5 else "stable"
+        trend_direction = "positive" if momentum > 0 else "negative" if momentum < 0 else "neutral"
+        
+        if price_change > 20:
+            performance = "exceptional growth"
+        elif price_change > 10:
+            performance = "solid growth"
+        elif price_change > 0:
+            performance = "modest growth"
+        elif price_change > -10:
+            performance = "slight decline"
+        else:
+            performance = "significant decline"
+        
+        stability = "high stability" if volatility < 20 else "moderate volatility" if volatility < 40 else "high volatility"
+        
+        return f"Showing {trend_strength} {trend_direction} momentum with {performance} and {stability}"
+
+    def _generate_outlook_description(self, score: float, market_data: Dict[str, Any]) -> str:
+        """Generate future outlook description based on real market data."""
+        momentum = market_data.get('momentum', 0)
+        volatility = market_data.get('volatility', 0)
+        
+        if score >= 8:
+            confidence = "high confidence in"
+        elif score >= 6:
+            confidence = "moderate confidence in"
+        else:
+            confidence = "cautious outlook for"
+        
+        if momentum > 1.5:
+            trajectory = "continued strong performance"
+        elif momentum > 0.5:
+            trajectory = "sustained positive momentum"
+        elif momentum > -0.5:
+            trajectory = "stable performance"
+        elif momentum > -1.5:
+            trajectory = "potential stabilization needed"
+        else:
+            trajectory = "significant improvements needed"
+        
+        risk_level = "low" if volatility < 20 else "moderate" if volatility < 40 else "high"
+        
+        return f"{confidence} {trajectory}, with {risk_level} market risk exposure"
+
+    def _get_major_events(self, company_name: str, market_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Get major market events based on real data."""
+        events = []
+        price_change = market_data.get('price_change', 0)
+        volume_change = market_data.get('volume_change', 0)
+        
+        # Add significant price movements
+        if abs(price_change) > 20:
+            events.append({
+                'date': datetime.now().strftime('%Y-%m'),
+                'event': f"{'Significant price increase' if price_change > 0 else 'Major price decline'}",
+                'impact': f"{abs(price_change):.1f}% price {'gain' if price_change > 0 else 'drop'}",
+                'score_change': price_change * 0.05
+            })
+        
+        # Add volume spikes
+        if abs(volume_change) > 50:
+            events.append({
+                'date': datetime.now().strftime('%Y-%m'),
+                'event': f"{'Unusual high trading volume' if volume_change > 0 else 'Significant volume decline'}",
+                'impact': f"{abs(volume_change):.1f}% volume {'increase' if volume_change > 0 else 'decrease'}",
+                'score_change': volume_change * 0.02
+            })
+        
+        return events

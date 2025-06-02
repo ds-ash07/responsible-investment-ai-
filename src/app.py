@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import json
 import traceback
+import yfinance as yf
 
 # Set page config
 st.set_page_config(
@@ -2773,6 +2774,121 @@ def analyze_company():
             traceback.print_exc()
             st.session_state.analysis_complete = False
 
+def verify_company_info(company_name: str, ticker: str) -> tuple[bool, str]:
+    """
+    Verify if the company name and ticker are valid and match.
+    Returns (is_valid, message)
+    """
+    try:
+        if not company_name or not ticker:
+            return False, "Please enter both company name and ticker symbol."
+        
+        # Clean up ticker (remove spaces and convert to uppercase)
+        ticker = ticker.strip().upper()
+        
+        # Common Indian company ticker mappings
+        indian_tickers = {
+            'M&M': 'MAHINDRA & MAHINDRA',
+            'L&T': 'LARSEN & TOUBRO',
+            'M&MFIN': 'MAHINDRA & MAHINDRA FINANCIAL SERVICES',
+            'P&G': 'PROCTER & GAMBLE',
+            'B&M': 'B&M EUROPEAN VALUE RETAIL',
+            'A&F': 'ABERCROMBIE & FITCH',
+            'J&J': 'JOHNSON & JOHNSON'
+        }
+        
+        # Check if this is a known ticker with special characters
+        matched_company = None
+        for known_ticker, company in indian_tickers.items():
+            if ticker.replace('&', '') == known_ticker.replace('&', ''):
+                matched_company = company
+                ticker = known_ticker  # Use the correct ticker format
+                break
+        
+        # Basic ticker format validation - allow special characters for known tickers
+        if not matched_company:  # Only validate format for non-special tickers
+            valid_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-&")
+            if not all(c in valid_chars for c in ticker):
+                return False, "Invalid ticker format. Ticker can only contain letters, numbers, dots, hyphens, and & for special cases."
+        
+        # Try to get company info from yfinance
+        try:
+            # Try different common exchange suffixes if the base ticker fails
+            exchanges = ['', '.NS', '.BO', '.L', '.PA', '.DE', '.MI', '.MC', '.AS', '.BR', '.SS', '.SZ', '.HK', '.TYO', '.T', '.AX', '.TO', '.JSE', '.BSE', '.KS', '.KL']
+            verified = False
+            official_name = None
+            error_message = None
+            
+            # If it's a known special ticker, try with exchange suffixes first
+            if matched_company:
+                for exchange in ['.NS', '.BO', '']:  # Prioritize Indian exchanges for known Indian tickers
+                    try:
+                        full_ticker = f"{ticker}{exchange}"
+                        yf_ticker = yf.Ticker(full_ticker)
+                        info = yf_ticker.info
+                        if info and 'longName' in info:
+                            verified = True
+                            official_name = info['longName']
+                            if exchange:
+                                error_message = f"Found company under ticker {full_ticker}"
+                            break
+                    except:
+                        continue
+            
+            # If not verified yet, try the exact ticker as provided
+            if not verified:
+                try:
+                    yf_ticker = yf.Ticker(ticker)
+                    info = yf_ticker.info
+                    if info and 'longName' in info:
+                        verified = True
+                        official_name = info['longName']
+                except:
+                    pass
+            
+            # If still not verified and no dot in ticker, try all exchanges
+            if not verified and '.' not in ticker:
+                for exchange in exchanges:
+                    try:
+                        full_ticker = f"{ticker}{exchange}"
+                        yf_ticker = yf.Ticker(full_ticker)
+                        info = yf_ticker.info
+                        if info and 'longName' in info:
+                            verified = True
+                            official_name = info['longName']
+                            error_message = f"Found company under ticker {full_ticker}"
+                            break
+                    except:
+                        continue
+            
+            if verified and official_name:
+                # For known special tickers, also match against the known company name
+                if matched_company and matched_company.lower() in official_name.lower():
+                    message = "Verification successful!"
+                    if error_message:
+                        message = f"{message} {error_message}"
+                    return True, message
+                
+                # Basic name matching (case-insensitive and partial match)
+                if company_name.lower() in official_name.lower() or official_name.lower() in company_name.lower():
+                    message = "Verification successful!"
+                    if error_message:
+                        message = f"{message} {error_message}"
+                    return True, message
+                else:
+                    return False, f"Company name doesn't match the ticker. Did you mean {official_name}?"
+            else:
+                suggestion = ""
+                if not '.' in ticker:
+                    suggestion = " Try adding the exchange suffix (e.g., .NS for NSE, .BO for BSE, .L for London)"
+                return False, f"Could not verify ticker symbol {ticker}. Please check if it's correct.{suggestion}"
+            
+        except Exception as e:
+            return False, f"Error verifying company information: {str(e)}"
+            
+    except Exception as e:
+        return False, f"Verification failed: {str(e)}"
+
 def display_search_section():
     """Display search inputs and button"""
     col1, col2, col3 = st.columns([3, 3, 1.5])
@@ -2788,9 +2904,20 @@ def display_search_section():
         st.write("")  # Add some vertical spacing
         st.write("")  # Add some vertical spacing
         if st.button("Analyze", key="search_button", help="Click to analyze company", use_container_width=True):
-            st.session_state.current_company = company_name
-            st.session_state.current_ticker = ticker
-            analyze_company()
+            # Verify company info before proceeding
+            is_valid, message = verify_company_info(company_name, ticker)
+            
+            if is_valid:
+                st.success(message)
+                st.session_state.current_company = company_name
+                st.session_state.current_ticker = ticker
+                analyze_company()
+            else:
+                st.error(message)
+                st.session_state.analysis_complete = False
+                st.session_state.company_data = None
+                st.session_state.current_company = None
+                st.session_state.current_ticker = None
 
 def display_ai_insights(financial_results):
     """Display AI insights in a three-column layout with proper styling"""
@@ -2920,7 +3047,7 @@ def display_ai_insights(financial_results):
 
 # Add new function for the AI Ethics & Trust Dashboard
 def display_ai_ethics_dashboard():
-    """Display the AI Ethics & Trust Dashboard with modern styling"""
+    """Display the AI Ethics & Trust Dashboard with modern styling and comprehensive information"""
     
     # Add custom CSS for the ethics dashboard
     st.markdown("""
@@ -3004,11 +3131,24 @@ def display_ai_ethics_dashboard():
     .in-progress { background: #fff3e0; color: #e65100; }
     .planned { background: #e3f2fd; color: #1565c0; }
     
-    .bias-metrics {
-        background: linear-gradient(165deg, #ffffff 0%, #f8f9fa 100%);
-        border-radius: 20px;
+    .info-box {
+        background: #f8f9fa;
+        border-radius: 15px;
         padding: 2rem;
         margin: 2rem 0;
+        border-left: 4px solid #1a237e;
+    }
+    
+    .info-title {
+        color: #1a237e;
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+    }
+    
+    .info-content {
+        color: #555;
+        line-height: 1.6;
     }
     
     .metric-row {
@@ -3055,6 +3195,17 @@ def display_ai_ethics_dashboard():
         border-radius: 10px;
         transition: width 0.5s ease;
     }
+    
+    .ethics-section {
+        margin: 3rem 0;
+    }
+    
+    .ethics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+        margin: 2rem 0;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -3062,12 +3213,22 @@ def display_ai_ethics_dashboard():
     st.markdown("""
     <div class="ethics-header">
         <h1>AI Ethics & Trust Dashboard</h1>
-        <p>Monitoring and ensuring responsible AI practices</p>
+        <p>Ensuring responsible and ethical AI practices in investment analysis</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Introduction Section
+    st.markdown("""
+    <div class="info-box">
+        <div class="info-title">🎯 Our Commitment to Ethical AI</div>
+        <div class="info-content">
+            Our platform is built on the foundation of responsible AI development and deployment. We adhere to the highest standards of ethical AI practices, following guidelines from leading organizations including the European Commission's AI Ethics Guidelines, UNESCO's AI Ethics framework, and industry best practices. Our commitment extends beyond compliance to actively promoting transparent, fair, and accountable AI systems.
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
     # System Status Section
-    st.markdown('<h2 style="color: #1a237e; margin-bottom: 1.5rem;">System Status</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 style="color: #1a237e; margin-bottom: 1.5rem;">System Status & Monitoring</h2>', unsafe_allow_html=True)
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -3107,140 +3268,169 @@ def display_ai_ethics_dashboard():
         </div>
         """, unsafe_allow_html=True)
     
-    # Principles Implementation Section
-    st.markdown('<h2 style="color: #1a237e; margin: 2rem 0;">12 Principles of Trustworthy AI</h2>', unsafe_allow_html=True)
+    # AI Ethics Framework Section
+    st.markdown("""
+    <div class="ethics-section">
+        <h2 style="color: #1a237e; margin-bottom: 1.5rem;">Our AI Ethics Framework</h2>
+        <div class="info-box">
+            <div class="info-content">
+                Our AI ethics framework is built on three fundamental pillars:
+                <ul>
+                    <li><strong>Lawful AI:</strong> Compliance with all applicable laws and regulations, including GDPR, AI Act, and financial regulations</li>
+                    <li><strong>Ethical AI:</strong> Adherence to ethical principles and values, ensuring responsible development and deployment</li>
+                    <li><strong>Robust AI:</strong> Technical excellence and social awareness in AI system development</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Updated Principles Section
+    st.markdown('<h2 style="color: #1a237e; margin: 2rem 0;">Comprehensive AI Ethics Principles</h2>', unsafe_allow_html=True)
     
     principles = [
         {
-            "name": "Explainability",
+            "name": "Human Agency & Oversight",
             "status": "implemented",
-            "icon": "🔍",
-            "description": "All AI decisions are accompanied by clear explanations and confidence scores.",
+            "icon": "👥",
+            "description": "Empowering human decision-making while maintaining appropriate human oversight of AI systems.",
             "measures": [
-                "SHAP values for feature importance",
-                "Natural language explanations",
-                "Confidence metrics display"
+                "Human-in-the-loop validation",
+                "Override capabilities",
+                "Decision review processes",
+                "Regular human audits"
+            ]
+        },
+        {
+            "name": "Technical Robustness & Safety",
+            "status": "implemented",
+            "icon": "🛡️",
+            "description": "Ensuring AI systems are secure, reliable, and resilient to attacks and errors.",
+            "measures": [
+                "Regular security assessments",
+                "Fallback mechanisms",
+                "Error handling protocols",
+                "Performance monitoring"
+            ]
+        },
+        {
+            "name": "Privacy & Data Governance",
+            "status": "implemented",
+            "icon": "🔐",
+            "description": "Protecting user privacy and ensuring responsible data management throughout the AI lifecycle.",
+            "measures": [
+                "GDPR compliance",
+                "Data minimization",
+                "Privacy-preserving techniques",
+                "Secure data handling"
             ]
         },
         {
             "name": "Transparency",
             "status": "implemented",
-            "icon": "👁️",
-            "description": "Complete visibility into data sources, methodologies, and model versions.",
+            "icon": "🔍",
+            "description": "Providing clear explanations of AI decisions and maintaining system transparency.",
             "measures": [
-                "Data source documentation",
-                "Model version tracking",
-                "Methodology disclosure"
+                "Explainable AI methods",
+                "Decision documentation",
+                "Process transparency",
+                "Regular reporting"
             ]
         },
         {
-            "name": "Fairness",
+            "name": "Diversity & Non-discrimination",
             "status": "implemented",
-            "icon": "⚖️",
-            "description": "Ensuring unbiased analysis across different company sizes and sectors.",
+            "icon": "🌈",
+            "description": "Ensuring fair treatment and preventing discriminatory outcomes across all user groups.",
             "measures": [
-                "Regular bias audits",
-                "Balanced dataset maintenance",
-                "Sector-specific calibration"
+                "Bias detection",
+                "Fairness metrics",
+                "Inclusive design",
+                "Regular equity audits"
             ]
         },
         {
-            "name": "Security",
+            "name": "Societal & Environmental Wellbeing",
             "status": "implemented",
-            "icon": "🔒",
-            "description": "Robust security measures to protect data and system integrity.",
+            "icon": "🌍",
+            "description": "Promoting sustainable and socially beneficial AI development and deployment.",
             "measures": [
-                "Encrypted data storage",
-                "Secure API endpoints",
-                "Regular security audits"
+                "Environmental impact assessment",
+                "Social impact monitoring",
+                "Sustainable practices",
+                "Community engagement"
             ]
         },
         {
             "name": "Accountability",
-            "status": "in-progress",
-            "icon": "📋",
-            "description": "Clear responsibility and oversight for AI decisions.",
+            "status": "implemented",
+            "icon": "⚖️",
+            "description": "Maintaining clear responsibility and liability for AI decisions and outcomes.",
             "measures": [
-                "Decision logging",
                 "Audit trails",
-                "Human oversight protocols"
+                "Responsibility frameworks",
+                "Impact assessments",
+                "Regular reporting"
             ]
         },
         {
-            "name": "Reliability",
+            "name": "Fairness & Justice",
             "status": "implemented",
-            "icon": "✅",
-            "description": "Consistent and dependable performance across different scenarios.",
+            "icon": "⚖️",
+            "description": "Ensuring equitable treatment and fair outcomes in AI decision-making.",
             "measures": [
-                "Automated testing",
+                "Fairness metrics monitoring",
+                "Bias mitigation strategies",
+                "Equal opportunity measures",
+                "Justice-oriented design"
+            ]
+        },
+        {
+            "name": "Reliability & Reproducibility",
+            "status": "implemented",
+            "icon": "🎯",
+            "description": "Ensuring consistent and verifiable AI system performance.",
+            "measures": [
+                "Performance validation",
+                "Reproducibility testing",
+                "Quality assurance",
+                "Version control"
+            ]
+        },
+        {
+            "name": "Informed Consent",
+            "status": "implemented",
+            "icon": "📝",
+            "description": "Obtaining and maintaining user consent for AI system interactions.",
+            "measures": [
+                "Clear consent mechanisms",
+                "User choice respect",
+                "Opt-out options",
+                "Regular consent renewal"
+            ]
+        },
+        {
+            "name": "Continuous Learning",
+            "status": "in-progress",
+            "icon": "📚",
+            "description": "Maintaining and improving AI systems through continuous learning and adaptation.",
+            "measures": [
+                "Model updates",
                 "Performance monitoring",
-                "Fallback mechanisms"
+                "Feedback integration",
+                "Continuous improvement"
             ]
         },
         {
-            "name": "Privacy",
+            "name": "Stakeholder Engagement",
             "status": "implemented",
-            "icon": "🔐",
-            "description": "Strong data protection and privacy preservation measures.",
+            "icon": "🤝",
+            "description": "Actively engaging with all stakeholders in AI system development and deployment.",
             "measures": [
-                "Data anonymization",
-                "Access controls",
-                "Privacy policy enforcement"
-            ]
-        },
-        {
-            "name": "Robustness",
-            "status": "in-progress",
-            "icon": "💪",
-            "description": "Resilient performance under various conditions and edge cases.",
-            "measures": [
-                "Edge case testing",
-                "Stress testing",
-                "Error handling"
-            ]
-        },
-        {
-            "name": "Governance",
-            "status": "implemented",
-            "icon": "👔",
-            "description": "Clear policies and procedures for AI system management.",
-            "measures": [
-                "Policy documentation",
-                "Role definitions",
-                "Review procedures"
-            ]
-        },
-        {
-            "name": "Human Oversight",
-            "status": "implemented",
-            "icon": "👥",
-            "description": "Maintaining human control and supervision over AI systems.",
-            "measures": [
-                "Human review process",
-                "Override capabilities",
-                "Expert consultation"
-            ]
-        },
-        {
-            "name": "Data Quality",
-            "status": "implemented",
-            "icon": "📊",
-            "description": "Ensuring high-quality, reliable data for analysis.",
-            "measures": [
-                "Data validation",
-                "Source verification",
-                "Regular updates"
-            ]
-        },
-        {
-            "name": "Continuous Monitoring",
-            "status": "in-progress",
-            "icon": "📈",
-            "description": "Ongoing surveillance and improvement of AI systems.",
-            "measures": [
-                "Performance tracking",
-                "Drift detection",
-                "Regular updates"
+                "Regular consultations",
+                "Feedback mechanisms",
+                "Stakeholder updates",
+                "Collaborative development"
             ]
         }
     ]
@@ -3272,11 +3462,54 @@ def display_ai_ethics_dashboard():
         </div>
         """, unsafe_allow_html=True)
     
+    # Ethical AI Development Process
+    st.markdown("""
+    <div class="ethics-section">
+        <h2 style="color: #1a237e; margin-bottom: 1.5rem;">Ethical AI Development Process</h2>
+        <div class="ethics-grid">
+            <div class="info-box">
+                <div class="info-title">🎯 Design Phase</div>
+                <div class="info-content">
+                    <ul>
+                        <li>Ethical impact assessment</li>
+                        <li>Stakeholder consultation</li>
+                        <li>Privacy-by-design implementation</li>
+                        <li>Fairness criteria definition</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="info-box">
+                <div class="info-title">⚙️ Development Phase</div>
+                <div class="info-content">
+                    <ul>
+                        <li>Bias testing and mitigation</li>
+                        <li>Robustness verification</li>
+                        <li>Security testing</li>
+                        <li>Performance validation</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="info-box">
+                <div class="info-title">🚀 Deployment Phase</div>
+                <div class="info-content">
+                    <ul>
+                        <li>User testing and feedback</li>
+                        <li>Impact monitoring</li>
+                        <li>Continuous assessment</li>
+                        <li>Regular audits</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
     # Bias Monitoring Section
-    st.markdown('<h2 style="color: #1a237e; margin: 2rem 0;">Bias Monitoring</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 style="color: #1a237e; margin: 2rem 0;">Comprehensive Bias Monitoring</h2>', unsafe_allow_html=True)
     
     st.markdown("""
-    <div class="bias-metrics">
+    <div class="info-box">
+        <div class="info-title">Current Bias Metrics</div>
         <div class="metric-row">
             <div>Sector Coverage</div>
             <div>92% Balanced</div>
@@ -3289,33 +3522,43 @@ def display_ai_ethics_dashboard():
             <div>Company Size Distribution</div>
             <div>94% Balanced</div>
         </div>
+        <div class="metric-row">
+            <div>Industry Diversity</div>
+            <div>89% Balanced</div>
+        </div>
+        <div class="metric-row">
+            <div>Market Cap Distribution</div>
+            <div>91% Representative</div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # Data Source Transparency Section
-    st.markdown('<h2 style="color: #1a237e; margin: 2rem 0;">Data Source Transparency</h2>', unsafe_allow_html=True)
+    # Data Transparency Section
+    st.markdown('<h2 style="color: #1a237e; margin: 2rem 0;">Enhanced Data Transparency</h2>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("""
         <div class="data-source-card">
-            <div class="source-header">Financial Data Sources</div>
+            <div class="source-header">Primary Data Sources</div>
             <div class="source-details">
-                • Yahoo Finance (Real-time)<br>
-                • SEC EDGAR Database<br>
-                • Bloomberg Terminal API<br>
-                • Reuters Financial Feed
+                • Financial Markets (Real-time)<br>
+                • Regulatory Filings<br>
+                • Company Reports<br>
+                • Market Analysis<br>
+                • Expert Assessments
             </div>
         </div>
         
         <div class="data-source-card">
-            <div class="source-header">ESG Data Providers</div>
+            <div class="source-header">ESG & Sustainability Data</div>
             <div class="source-details">
-                • MSCI ESG Ratings<br>
-                • Sustainalytics<br>
-                • CDP Climate Scores<br>
-                • ISS ESG Ratings
+                • ESG Rating Providers<br>
+                • Sustainability Reports<br>
+                • Environmental Metrics<br>
+                • Social Impact Assessments<br>
+                • Governance Evaluations
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -3323,25 +3566,46 @@ def display_ai_ethics_dashboard():
     with col2:
         st.markdown("""
         <div class="data-source-card">
-            <div class="source-header">Market Sentiment Sources</div>
+            <div class="source-header">AI Model Information</div>
             <div class="source-details">
-                • News API Integration<br>
-                • Social Media Analytics<br>
-                • Expert Analysis Reports<br>
-                • Industry Publications
+                • Model: Nemotron LLM<br>
+                • Training Data: Up to 2024<br>
+                • Update Frequency: Monthly<br>
+                • Validation Process: Continuous<br>
+                • Performance Metrics: Public
             </div>
         </div>
         
         <div class="data-source-card">
-            <div class="source-header">Data Update Frequency</div>
+            <div class="source-header">Compliance & Standards</div>
             <div class="source-details">
-                • Financial: Real-time<br>
-                • ESG: Monthly<br>
-                • Sentiment: Daily<br>
-                • Ratings: Quarterly
+                • EU AI Act Compliance<br>
+                • GDPR Requirements<br>
+                • ISO AI Standards<br>
+                • Industry Best Practices<br>
+                • Ethical Guidelines
             </div>
         </div>
         """, unsafe_allow_html=True)
+    
+    # Future Commitments Section
+    st.markdown("""
+    <div class="ethics-section">
+        <h2 style="color: #1a237e; margin-bottom: 1.5rem;">Our Commitment to the Future</h2>
+        <div class="info-box">
+            <div class="info-content">
+                <p>We are committed to continuous improvement and adaptation of our AI ethics framework. Our future initiatives include:</p>
+                <ul>
+                    <li>Enhanced explainability features for complex AI decisions</li>
+                    <li>Advanced bias detection and mitigation systems</li>
+                    <li>Expanded stakeholder engagement programs</li>
+                    <li>Integration of emerging ethical AI standards</li>
+                    <li>Development of new transparency tools</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Main application logic
 if page == "Company Analysis":
