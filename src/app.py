@@ -10,6 +10,13 @@ import numpy as np
 import json
 import traceback
 import yfinance as yf
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+import io
+import base64
 
 # Set page config
 st.set_page_config(
@@ -1589,6 +1596,13 @@ def display_company_analysis(company_name, ticker):
             # Update session state
             st.session_state.analysis_complete = True
             st.session_state.company_data = final_data
+            
+            # After all analysis is complete, add the PDF download button
+            if st.session_state.analysis_complete and st.session_state.company_data:
+                st.markdown("---")
+                st.markdown("### Download Analysis Report")
+                pdf_buffer = generate_pdf_report(company_name, ticker, st.session_state.company_data)
+                st.markdown(get_download_link(pdf_buffer.getvalue(), f"{company_name}_analysis_report.pdf"), unsafe_allow_html=True)
             
         except Exception as e:
             st.error(f"Error analyzing company: {str(e)}")
@@ -3606,6 +3620,258 @@ def display_ai_ethics_dashboard():
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+def generate_pdf_report(company_name, ticker, company_data):
+    """Generate a PDF report from the analysis data"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Title and Header
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30
+    )
+    story.append(Paragraph(f"{company_name}", title_style))
+    story.append(Paragraph(f"Stock Ticker: {ticker}", styles['Heading2']))
+    story.append(Spacer(1, 20))
+
+    # Dashboard Overview
+    story.append(Paragraph("Dashboard Overview", styles['Heading2']))
+    story.append(Spacer(1, 10))
+    
+    # ESG Scores
+    sdg_data = company_data.get('sdg', {})
+    scores = sdg_data.get('scores', {})
+    overview_data = [
+        [Paragraph("Environmental", styles['Normal']), Paragraph(f"{scores.get('environmental', 'N/A')}", styles['Normal'])],
+        [Paragraph("Social", styles['Normal']), Paragraph(f"{scores.get('social', 'N/A')}", styles['Normal'])],
+        [Paragraph("Governance", styles['Normal']), Paragraph(f"{scores.get('governance', 'N/A')}", styles['Normal'])],
+        [Paragraph("Market Sentiment", styles['Normal']), Paragraph(f"{company_data.get('sentiment', {}).get('sentiment_score', 'N/A')}", styles['Normal'])]
+    ]
+    t = Table(overview_data, colWidths=[3*inch, 1*inch])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 20))
+
+    # ESG Analysis
+    story.append(Paragraph("ESG Analysis", styles['Heading2']))
+    story.append(Paragraph(f"Overall ESG Score: {scores.get('sdg_alignment', 'N/A')}/10", styles['Heading3']))
+    story.append(Spacer(1, 10))
+
+    # Analysis Details
+    justifications = sdg_data.get('justifications', {})
+    details = [
+        [Paragraph("Environmental", styles['Normal']), Paragraph(justifications.get('environmental', 'N/A'), styles['Normal'])],
+        [Paragraph("Social", styles['Normal']), Paragraph(justifications.get('social', 'N/A'), styles['Normal'])],
+        [Paragraph("Governance", styles['Normal']), Paragraph(justifications.get('governance', 'N/A'), styles['Normal'])],
+        [Paragraph("SDG Alignment", styles['Normal']), Paragraph(justifications.get('sdg_alignment', 'N/A'), styles['Normal'])]
+    ]
+    t = Table(details, colWidths=[1.5*inch, 4.5*inch])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 20))
+
+    # Strengths and Concerns
+    story.append(Paragraph("Strengths", styles['Heading3']))
+    for strength in sdg_data.get('strengths', []):
+        story.append(Paragraph(f"{strength['category']}", styles['Heading4']))
+        story.append(Paragraph(f"{strength['description']}", styles['Normal']))
+        story.append(Paragraph(f"Evidence: {strength['evidence']}", styles['Normal']))
+        story.append(Spacer(1, 5))
+
+    story.append(Paragraph("Concerns", styles['Heading3']))
+    for concern in sdg_data.get('concerns', []):
+        story.append(Paragraph(f"{concern['category']}", styles['Heading4']))
+        story.append(Paragraph(f"{concern['description']}", styles['Normal']))
+        story.append(Paragraph(f"Impact: {concern['impact']}", styles['Normal']))
+        story.append(Spacer(1, 5))
+
+    # Market Sentiment Analysis
+    sentiment_data = company_data.get('sentiment', {})
+    story.append(Paragraph("Market Sentiment Analysis", styles['Heading2']))
+    story.append(Paragraph(f"Overall Market Sentiment Score: {sentiment_data.get('sentiment_score', 'N/A')}/10", styles['Heading3']))
+    story.append(Paragraph(f"Confidence: {sentiment_data.get('confidence', 'N/A')*100}%", styles['Normal']))
+    story.append(Spacer(1, 10))
+
+    # Positive and Negative Factors
+    story.append(Paragraph("Positive Factors", styles['Heading3']))
+    for factor in sentiment_data.get('positive_factors', []):
+        story.append(Paragraph(f"{factor['category']}", styles['Heading4']))
+        story.append(Paragraph(f"Score: {factor['impact_score']}", styles['Normal']))
+        story.append(Paragraph(f"{factor['description']}", styles['Normal']))
+        story.append(Spacer(1, 5))
+
+    story.append(Paragraph("Negative Factors", styles['Heading3']))
+    for factor in sentiment_data.get('negative_factors', []):
+        story.append(Paragraph(f"{factor['category']}", styles['Heading4']))
+        story.append(Paragraph(f"Score: {factor['impact_score']}", styles['Normal']))
+        story.append(Paragraph(f"{factor['description']}", styles['Normal']))
+        story.append(Spacer(1, 5))
+
+    # Major Events Timeline
+    story.append(Paragraph("Major Events Timeline", styles['Heading3']))
+    for event in sentiment_data.get('major_events', []):
+        story.append(Paragraph(f"{event['date']}", styles['Heading4']))
+        story.append(Paragraph(f"{event['event']}", styles['Normal']))
+        story.append(Paragraph(f"{event['impact']}", styles['Normal']))
+        story.append(Paragraph(f"Score Impact: {event['score_change']}", styles['Normal']))
+        story.append(Spacer(1, 5))
+
+    # Market Trend Analysis
+    trend = sentiment_data.get('trend_analysis', {})
+    story.append(Paragraph("Market Trend Analysis", styles['Heading3']))
+    story.append(Paragraph("Current Trend", styles['Heading4']))
+    story.append(Paragraph(trend.get('current_trend', 'N/A'), styles['Normal']))
+    story.append(Paragraph("Future Outlook", styles['Heading4']))
+    story.append(Paragraph(trend.get('future_outlook', 'N/A'), styles['Normal']))
+    story.append(Spacer(1, 20))
+
+    # Financial Analysis
+    financial_data = company_data.get('financial', {})
+    story.append(Paragraph("Financial Analysis", styles['Heading2']))
+    
+    # Core Metrics
+    core_metrics = financial_data.get('core_metrics', {})
+    metrics_data = [
+        ["Core Metrics", ""],
+        ["Return on Equity (ROE)", f"{core_metrics.get('roe', 'N/A')}%"],
+        ["Return on Assets (ROA)", f"{core_metrics.get('roa', 'N/A')}%"],
+        ["Profit Margin", f"{core_metrics.get('profit_margin', 'N/A')}%"],
+        ["", ""],
+        ["Market Position", ""],
+        ["P/E Ratio", str(core_metrics.get('pe_ratio', 'N/A'))],
+        ["Market Cap (B)", f"${core_metrics.get('market_cap', 'N/A')}"],
+        ["Dividend Yield", f"{core_metrics.get('dividend_yield', 'N/A')}%"],
+        ["", ""],
+        ["Growth Metrics", ""],
+        ["Revenue Growth", f"{core_metrics.get('revenue_growth', 'N/A')}%"],
+        ["EPS Growth", f"{core_metrics.get('eps_growth', 'N/A')}%"],
+        ["Stock Momentum", f"{core_metrics.get('stock_momentum', 'N/A')}/10"],
+        ["", ""],
+        ["Risk Metrics", ""],
+        ["Beta", str(core_metrics.get('beta', 'N/A'))],
+        ["Debt/Equity", str(core_metrics.get('debt_equity', 'N/A'))],
+        ["Current Ratio", str(core_metrics.get('current_ratio', 'N/A'))],
+        ["", ""],
+        ["Overall Financial Health", ""],
+        ["Growth Rate", f"{core_metrics.get('growth_rate', 'N/A')}%"],
+        ["Market Trend", core_metrics.get('trend', 'N/A')],
+        ["Volatility", core_metrics.get('volatility', 'N/A')]
+    ]
+    t = Table(metrics_data, colWidths=[2.5*inch, 2.5*inch])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ('SPAN', (0, 0), (1, 0)),
+        ('SPAN', (0, 4), (1, 4)),
+        ('SPAN', (0, 8), (1, 8)),
+        ('SPAN', (0, 12), (1, 12)),
+        ('SPAN', (0, 16), (1, 16))
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 20))
+
+    # AI Insights
+    ai_insights = financial_data.get('ai_insights', {})
+    story.append(Paragraph("AI Insights", styles['Heading2']))
+    
+    # Strengths
+    story.append(Paragraph("Key Strengths", styles['Heading3']))
+    for strength in ai_insights.get('strengths', []):
+        story.append(Paragraph(f"• {strength}", styles['Normal']))
+    story.append(Spacer(1, 10))
+
+    # Risks
+    story.append(Paragraph("Key Risks", styles['Heading3']))
+    for risk in ai_insights.get('risks', []):
+        story.append(Paragraph(f"• {risk}", styles['Normal']))
+    story.append(Spacer(1, 10))
+
+    # Opportunities
+    story.append(Paragraph("Growth Opportunities", styles['Heading3']))
+    for opp in ai_insights.get('opportunities', []):
+        story.append(Paragraph(f"• {opp}", styles['Normal']))
+    story.append(Spacer(1, 20))
+
+    # Investment Recommendation
+    story.append(Paragraph("Investment Recommendation", styles['Heading2']))
+    overall_score = calculate_overall_score(financial_data, sdg_data, sentiment_data)
+    story.append(Paragraph(f"{overall_score}/10", styles['Heading3']))
+    story.append(Paragraph("Recommended", styles['Heading4']))
+    
+    # Analysis Summary
+    story.append(Paragraph("Analysis Summary", styles['Heading3']))
+    summary = [
+        "Strong overall performance with positive indicators across most metrics.",
+        "Good balance of financial returns and sustainable practices.",
+        "",
+        "• Solid financial performance",
+        "• Good ESG practices",
+        "• Favorable market position",
+        "• Stable growth outlook"
+    ]
+    for line in summary:
+        story.append(Paragraph(line, styles['Normal']))
+
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+def get_download_link(val, filename):
+    """Generate a visually appealing download button for the PDF"""
+    b64 = base64.b64encode(val)  # val looks like b'...'
+    button_html = f'''
+    <style>
+    .custom-download-btn {{
+        display: inline-block;
+        padding: 0.75rem 2rem;
+        background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%);
+        color: white !important;
+        border: none;
+        border-radius: 25px;
+        font-weight: 600;
+        font-size: 1.1rem;
+        text-align: center;
+        text-decoration: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        transition: background 0.2s, transform 0.2s;
+        margin-top: 1rem;
+    }}
+    .custom-download-btn:hover {{
+        background: linear-gradient(135deg, #3949ab 0%, #1976d2 100%);
+        color: #fff !important;
+        transform: translateY(-2px) scale(1.03);
+        text-decoration: none;
+    }}
+    </style>
+    <a href="data:application/octet-stream;base64,{b64.decode()}" download="{filename}" class="custom-download-btn">Download PDF Report</a>
+    '''
+    return button_html
 
 # Main application logic
 if page == "Company Analysis":

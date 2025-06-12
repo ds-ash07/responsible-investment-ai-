@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 import traceback
 import re
 import yfinance as yf
-from ..utils.nemotron_client import NemotronClient
+from utils.nemotron_client import NemotronClient
 import logging
 
 logger = logging.getLogger(__name__)
